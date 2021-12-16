@@ -163,7 +163,7 @@ function ode_civicrm_validateForm($formName, &$fields, &$files, &$form, &$errors
  *
  * @return array|bool
  */
-function toCheckEmail($email, $field, $returnHostName = FALSE) {
+function toCheckEmail($email, $field, $returnHostName = FALSE, $disableStatusMesage = FALSE) {
   $error = [];
   if (!$email) {
     return $error;
@@ -191,6 +191,9 @@ function toCheckEmail($email, $field, $returnHostName = FALSE) {
     }
   }
   if ($isError) {
+    if ($disableStatusMesage) {
+      return $isError;
+    }
     $error[$field] = E::ts('The Outbound Domain Enforcement extension has prevented this From Email Address from being used as it uses a different domain than the System-generated Mail Settings From Email Address configured at Administer > Communications > Organization Address and Contact Info.');
   }
   return $error;
@@ -637,6 +640,25 @@ function ode_civicrm_apiWrappers(&$wrappers, $apiRequest) {
     );
     if (in_array($optionGroup, array($optionGroupId, 'from_email_address'))) {
       $wrappers[] = new CRM_Ode_OdeAPIWrapper();
+    }
+  }
+}
+
+/**
+ * Implements hook_civicrm_alterMailParams().
+ *
+ * This is done so that any emails such as those coming out of acitivty assignee notificatons get fixed also
+ */
+function ode_civicrm_alterMailParams(&$params, $context) {
+  if (!empty($params['from'])) {
+    // if the from email fails validation we put it into the replyTo if that header is either absent or matches the from email address.
+    if (toCheckEmail(CRM_Utils_Mail::pluckEmailFromHeader($params['from']), 'from_email', FALSE, TRUE)) {
+      if (empty($params['replyTo'])) {
+        $params['replyTo'] = CRM_Utils_Mail::pluckEmailFromHeader($params['from']);
+      }
+      $parts = explode('<', $params['from']);
+      [$domainFromName, $domainFromEmail] = CRM_Core_BAO_Domain::getDefaultReceiptFrom();
+      $params['from'] = trim($parts[0]) . ' <' . $domainFromEmail . '>';
     }
   }
 }
